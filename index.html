@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SQL Log Formatter</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  textarea { resize: vertical; }
+  textarea:focus { outline: none; }
+
+  #editor .CodeMirror {
+    height: auto;
+    min-height: 16rem;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+  }
+  #editor .CodeMirror-scroll {
+    min-height: 16rem;
+  }
+  .cm-s-material-darker {
+    border-radius: 0.5rem;
+  }
+</style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+
+<div class="max-w-7xl mx-auto px-4 py-6">
+
+  <header class="mb-6">
+    <h1 class="text-2xl font-bold tracking-tight">SQL Log Formatter</h1>
+    <p class="text-gray-400 text-sm mt-1">Inject parameters into raw SQL and format the result</p>
+  </header>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+    <!-- Input Panel -->
+    <section class="bg-gray-900 border border-gray-800 rounded-xl p-5 flex flex-col gap-4">
+
+      <div>
+        <label for="sqlInput" class="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Raw SQL</label>
+        <textarea id="sqlInput" rows="8"
+          placeholder="SELECT * FROM users WHERE id = ? AND status = ?"
+          class="w-full bg-gray-950 border border-gray-700 rounded-lg p-3.5 text-sm font-mono text-gray-100 placeholder-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors">SELECT u.id, u.name, COUNT(o.id) AS order_count
+FROM users u
+LEFT JOIN orders o ON u.id = o.user_id
+WHERE u.status = ?
+  AND o.created_at > ?
+GROUP BY u.id, u.name
+ORDER BY order_count DESC
+LIMIT ?</textarea>
+      </div>
+
+      <div>
+        <label for="paramsInput" class="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Parameters</label>
+        <textarea id="paramsInput" rows="3"
+          placeholder='["active", "2024-01-01", 10] or active, 2024-01-01, 10'
+          class="w-full bg-gray-950 border border-gray-700 rounded-lg p-3.5 text-sm font-mono text-gray-100 placeholder-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors">["active", "2024-01-01", 10]</textarea>
+        <p class="text-xs text-gray-500 mt-1.5">Accepts JSON array, JSON object (<code class="text-gray-400">:name</code> placeholders), or comma-separated values.</p>
+      </div>
+
+      <div class="flex items-center gap-3 pt-1">
+        <button id="formatBtn"
+          class="bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-medium px-6 py-2.5 rounded-lg transition-colors text-sm flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h12"/></svg>
+          Format SQL
+        </button>
+        <button id="clearBtn"
+          class="text-gray-400 hover:text-gray-200 hover:bg-gray-800 px-4 py-2.5 rounded-lg transition-colors text-sm">
+          Clear
+        </button>
+      </div>
+
+    </section>
+
+    <!-- Output Panel -->
+    <section class="bg-gray-900 border border-gray-800 rounded-xl p-5 flex flex-col gap-3">
+
+      <div class="flex items-center justify-between">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400">Formatted SQL</h2>
+        <button id="copyBtn" disabled
+          class="bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-gray-300 font-medium px-4 py-1.5 rounded-lg transition-colors text-xs flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+          Copy
+        </button>
+      </div>
+
+      <div id="editor"></div>
+
+    </section>
+
+  </div>
+
+  <footer class="mt-8 text-center text-xs text-gray-600">
+    Client-side only &middot; No data leaves your browser
+  </footer>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/sql/sql.min.js"></script>
+<script>
+// ─── Constants ────────────────────────────────────────────────────────────
+
+const SQL_KEYWORDS = [
+  'SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN',
+  'OUTER JOIN', 'FULL JOIN', 'CROSS JOIN', 'ON', 'AND', 'OR', 'NOT', 'IN',
+  'EXISTS', 'BETWEEN', 'LIKE', 'IS', 'NULL', 'AS', 'DISTINCT',
+  'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'OFFSET',
+  'INSERT INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE FROM',
+  'UNION', 'ALL', 'INTERSECT', 'EXCEPT',
+  'ASC', 'DESC',
+  'COUNT', 'SUM', 'AVG', 'MIN', 'MAX',
+  'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
+  'CREATE', 'ALTER', 'DROP', 'TABLE', 'INDEX', 'VIEW',
+  'PRIMARY KEY', 'FOREIGN KEY', 'REFERENCES', 'DEFAULT', 'CHECK', 'UNIQUE', 'CONSTRAINT',
+  'INNER', 'OUTER', 'FULL', 'CROSS', 'LEFT', 'RIGHT',
+  'TRUE', 'FALSE',
+];
+
+const CLAUSE_KEYWORDS = [
+  'SELECT', 'FROM', 'WHERE',
+  'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN', 'OUTER JOIN', 'FULL JOIN', 'CROSS JOIN', 'JOIN',
+  'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'OFFSET',
+  'INSERT INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE FROM',
+  'UNION', 'INTERSECT', 'EXCEPT',
+  'AND', 'OR', 'ON',
+];
+
+const CLAUSE_SORTED = [...CLAUSE_KEYWORDS].sort((a, b) => b.length - a.length);
+const KW_SORTED = [...SQL_KEYWORDS].sort((a, b) => b.length - a.length);
+
+// ─── Utility: Escape a value for SQL injection ───────────────────────────
+
+function escapeSQLValue(val) {
+  if (val === null || val === undefined) return 'NULL';
+  if (typeof val === 'boolean') return val ? 'TRUE' : 'FALSE';
+  if (typeof val === 'number') return String(val);
+  const str = String(val);
+  return "'" + str.replace(/'/g, "''") + "'";
+}
+
+// ─── Utility: Parse parameters string into array or object ──────────────
+
+function parseParams(input) {
+  const t = input.trim();
+  if (!t) return [];
+
+  if (t.startsWith('[') || t.startsWith('{')) {
+    try { return JSON.parse(t); } catch (e) {
+      throw new SyntaxError('Invalid JSON: ' + e.message);
+    }
+  }
+
+  if (t.includes(',')) {
+    return t.split(',').map(s => {
+      const v = s.trim();
+      if (!v || v === 'null') return null;
+      if (v === 'true') return true;
+      if (v === 'false') return false;
+      if (!isNaN(Number(v)) && v.length > 0) return Number(v);
+      if ((v.startsWith("'") && v.endsWith("'")) || (v.startsWith('"') && v.endsWith('"'))) return v.slice(1, -1);
+      return v;
+    });
+  }
+
+  const v = t;
+  if (v === 'null') return [null];
+  if (v === 'true') return [true];
+  if (v === 'false') return [false];
+  if (!isNaN(Number(v))) return [Number(v)];
+  if ((v.startsWith("'") && v.endsWith("'")) || (v.startsWith('"') && v.endsWith('"'))) return [v.slice(1, -1)];
+  return [v];
+}
+
+// ─── Core: Inject parameters into SQL ────────────────────────────────────
+
+function injectParams(sql, params) {
+  let result = sql;
+  const hasQ = /\?/.test(result);
+  const hasDollar = /\$\d+/.test(result);
+  const hasNamed = /:\w+/.test(result);
+
+  if (Array.isArray(params)) {
+    if (hasQ) {
+      let i = 0;
+      result = result.replace(/\?/g, () => (i < params.length ? escapeSQLValue(params[i++]) : '?'));
+    }
+    if (hasDollar) {
+      result = result.replace(/\$(\d+)/g, (_, n) => {
+        const idx = parseInt(n, 10) - 1;
+        return idx >= 0 && idx < params.length ? escapeSQLValue(params[idx]) : '$' + n;
+      });
+    }
+  } else if (typeof params === 'object' && params !== null) {
+    if (hasNamed) {
+      result = result.replace(/:(\w+)/g, (_, name) =>
+        name in params ? escapeSQLValue(params[name]) : ':' + name
+      );
+    }
+  }
+
+  return result;
+}
+
+// ─── Core: Format SQL (indentation, newlines, keyword uppercasing) ──────
+
+function formatSQL(sql) {
+  let s = sql.replace(/\s+/g, ' ').trim();
+  if (!s) return s;
+
+  for (const kw of KW_SORTED) {
+    const pat = kw.replace(/\s+/g, '\\s+');
+    s = s.replace(new RegExp('\\b' + pat + '\\b', 'gi'), kw);
+  }
+
+  let out = '';
+  let inStr = false;
+  let quote = '';
+
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+
+    if (!inStr && (ch === "'" || ch === '"')) {
+      inStr = true;
+      quote = ch;
+      out += ch;
+      continue;
+    }
+    if (inStr && ch === quote && (i === 0 || s[i - 1] !== '\\')) {
+      inStr = false;
+      out += ch;
+      continue;
+    }
+
+    if (!inStr) {
+      let hit = false;
+      for (const kw of CLAUSE_SORTED) {
+        if (i + kw.length <= s.length && s.substring(i, i + kw.length) === kw) {
+          const prev = i > 0 ? s[i - 1] : ' ';
+          const next = i + kw.length < s.length ? s[i + kw.length] : ' ';
+          if (!/\w/.test(prev) && !/\w/.test(next)) {
+            if (i > 0 && out[out.length - 1] !== '\n') out += '\n';
+            out += kw;
+            i += kw.length - 1;
+            hit = true;
+            break;
+          }
+        }
+      }
+      if (hit) continue;
+      out += ch;
+    } else {
+      out += ch;
+    }
+  }
+
+  const lines = out.split('\n').map(l => l.trim()).filter(Boolean);
+  const indented = lines.map((line, idx) => {
+    if (idx === 0) return line;
+    const fw = line.split(/\s+/)[0].toUpperCase();
+    if (fw === 'AND' || fw === 'OR') return '        ' + line;
+    if (fw === 'ON') return '        ' + line;
+    if (['FROM', 'WHERE', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'FULL', 'CROSS', 'JOIN',
+         'GROUP', 'ORDER', 'HAVING', 'LIMIT', 'OFFSET',
+         'VALUES', 'SET', 'UNION', 'INTERSECT', 'EXCEPT',
+         'INSERT', 'UPDATE', 'DELETE'].includes(fw)) {
+      return '    ' + line;
+    }
+    return '    ' + line;
+  });
+
+  return indented.join('\n').trim();
+}
+
+// ─── UI: Editor & state ──────────────────────────────────────────────────
+
+const sqlInput = document.getElementById('sqlInput');
+const paramsInput = document.getElementById('paramsInput');
+const formatBtn = document.getElementById('formatBtn');
+const copyBtn = document.getElementById('copyBtn');
+const clearBtn = document.getElementById('clearBtn');
+
+const editor = CodeMirror(document.getElementById('editor'), {
+  mode: 'text/x-sql',
+  theme: 'material-darker',
+  readOnly: true,
+  lineNumbers: true,
+  viewportMargin: Infinity,
+});
+
+let processTimer = null;
+
+function process() {
+  const rawSQL = sqlInput.value;
+  const rawParams = paramsInput.value;
+
+  if (!rawSQL.trim()) {
+    editor.setValue('Enter a SQL query to format.');
+    copyBtn.disabled = true;
+    return;
+  }
+
+  let params;
+  try {
+    params = parseParams(rawParams);
+  } catch (e) {
+    editor.setValue('Error parsing parameters: ' + e.message);
+    copyBtn.disabled = true;
+    return;
+  }
+
+  let injected;
+  try {
+    injected = injectParams(rawSQL, params);
+  } catch (e) {
+    editor.setValue('Error injecting parameters: ' + e.message);
+    copyBtn.disabled = true;
+    return;
+  }
+
+  const formatted = formatSQL(injected);
+  editor.setValue(formatted || '(empty result)');
+  copyBtn.disabled = false;
+}
+
+function scheduleProcess() {
+  clearTimeout(processTimer);
+  processTimer = setTimeout(process, 300);
+}
+
+function copySQL() {
+  const text = editor.getValue();
+  if (!text || text.startsWith('Enter') || text.startsWith('Error')) return;
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      flashCopyBtn('Copied!');
+    }).catch(() => {
+      fallbackCopy(text);
+    });
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try {
+    document.execCommand('copy');
+    flashCopyBtn('Copied!');
+  } catch {
+    flashCopyBtn('Failed');
+  }
+  document.body.removeChild(ta);
+}
+
+function flashCopyBtn(msg) {
+  const orig = copyBtn.innerHTML;
+  copyBtn.innerHTML = msg;
+  copyBtn.disabled = true;
+  setTimeout(() => {
+    copyBtn.innerHTML = orig;
+    copyBtn.disabled = false;
+  }, 1800);
+}
+
+function clearAll() {
+  sqlInput.value = '';
+  paramsInput.value = '';
+  editor.setValue('Enter a SQL query to format.');
+  copyBtn.disabled = true;
+  sqlInput.focus();
+}
+
+// ─── Event binding ──────────────────────────────────────────────────────
+
+formatBtn.addEventListener('click', () => {
+  clearTimeout(processTimer);
+  process();
+});
+
+copyBtn.addEventListener('click', copySQL);
+clearBtn.addEventListener('click', clearAll);
+
+sqlInput.addEventListener('input', scheduleProcess);
+paramsInput.addEventListener('input', scheduleProcess);
+
+sqlInput.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key === 'Enter') {
+    clearTimeout(processTimer);
+    process();
+  }
+});
+
+paramsInput.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key === 'Enter') {
+    clearTimeout(processTimer);
+    process();
+  }
+});
+
+// Auto-format on page load
+process();
+</script>
+</body>
+</html>
