@@ -32,7 +32,7 @@ npx -p format-my-sql sqlformat "SELECT * FROM t WHERE id = ?" "[42]"
 
 ## Web
 
-Client-side only, no backend → [formatmysql.vercel.io](https://formatmysql.vercel.io)
+Client-side only, no backend → [formatmysql.vercel.app](https://formatmysql.vercel.app)
 
 ## License
 
