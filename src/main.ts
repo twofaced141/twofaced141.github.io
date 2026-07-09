@@ -137,11 +137,15 @@ document.addEventListener('keydown', e => {
   }
 });
 
-// ─── Global helpers (used from inline onclick) ─────────────────────────────
+// ─── CLI card copy buttons ────────────────────────────────────────────────
 
-(window as any).copyText = function (btn: HTMLElement, text: string) {
+document.getElementById('cliCard')?.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest('.cli-copy') as HTMLElement | null;
+  if (!btn) return;
+  const text = btn.getAttribute('data-copy') || '';
+  if (!text) return;
   if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(text).then(() => { flashCopyBtn(btn, 'Copied!'); });
+    navigator.clipboard.writeText(text).then(() => flashCLICopy(btn));
   } else {
     const ta = document.createElement('textarea');
     ta.value = text;
@@ -151,13 +155,13 @@ document.addEventListener('keydown', e => {
     ta.select();
     document.execCommand('copy');
     document.body.removeChild(ta);
-    flashCopyBtn(btn, 'Copied!');
+    flashCLICopy(btn);
   }
-};
+});
 
-function flashCopyBtn(btn: HTMLElement, msg: string) {
+function flashCLICopy(btn: HTMLElement) {
   const orig = btn.innerHTML;
-  btn.innerHTML = msg;
+  btn.innerHTML = 'Copied!';
   setTimeout(() => { btn.innerHTML = orig; }, 1200);
 }
 

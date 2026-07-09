@@ -80,11 +80,11 @@ LIMIT ?</textarea>
     <div class="text-center text-xs text-gray-600">
       <span class="text-blue-400">format my sql</span> &middot; Client-side only &middot; No data leaves your browser
     </div>
-    <div class="max-w-xl mx-auto bg-gray-900 border border-gray-800 rounded-xl p-4 text-xs font-mono">
+    <div class="max-w-xl mx-auto bg-gray-900 border border-gray-800 rounded-xl p-4 text-xs font-mono" id="cliCard">
       <div class="text-gray-400 mb-2">Install CLI &nbsp;<span class="text-gray-600">—</span></div>
       <div class="flex items-center justify-between">
         <span class="text-gray-300">npm install -g format-my-sql</span>
-        <button onclick="copyText(this,'npm install -g format-my-sql')" class="text-gray-500 hover:text-gray-300 transition-colors shrink-0 ml-3">
+        <button data-copy="npm install -g format-my-sql" class="cli-copy text-gray-500 hover:text-gray-300 transition-colors shrink-0 ml-3">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
         </button>
       </div>
@@ -92,7 +92,7 @@ LIMIT ?</textarea>
       <div class="text-gray-600 mt-2"># or without install:</div>
       <div class="flex items-center justify-between">
         <span class="text-gray-300">npx format-my-sql "SELECT * FROM t WHERE id = ?" "[42]"</span>
-        <button onclick="copyText(this,'npx format-my-sql \"SELECT * FROM t WHERE id = ?\" \"[42]\"')" class="text-gray-500 hover:text-gray-300 transition-colors shrink-0 ml-3">
+        <button data-copy='npx format-my-sql "SELECT * FROM t WHERE id = ?" "[42]"' class="cli-copy text-gray-500 hover:text-gray-300 transition-colors shrink-0 ml-3">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
         </button>
       </div>
