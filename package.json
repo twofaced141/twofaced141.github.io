@@ -1,16 +1,24 @@
 {
   "name": "format-my-sql",
-  "private": true,
+  "version": "1.0.0",
+  "description": "Inject parameters into raw SQL and format the result — CLI tool",
   "type": "module",
+  "bin": {
+    "sqlformat": "./bin/sqlformat.js"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
   },
-  "dependencies": {
-    "codemirror": "^5.65.16"
+  "keywords": ["sql", "formatter", "cli", "parameters", "inject"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/twofaced141/twofaced141.github.io.git"
   },
   "devDependencies": {
+    "codemirror": "^5.65.16",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
