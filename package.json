@@ -1,6 +1,6 @@
 {
   "name": "format-my-sql",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Inject parameters into raw SQL and format the result — CLI tool",
   "type": "module",
   "bin": {
@@ -11,7 +11,13 @@
     "build": "vite build",
     "preview": "vite preview"
   },
-  "keywords": ["sql", "formatter", "cli", "parameters", "inject"],
+  "keywords": [
+    "sql",
+    "formatter",
+    "cli",
+    "parameters",
+    "inject"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
