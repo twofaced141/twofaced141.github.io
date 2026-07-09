@@ -1,6 +1,6 @@
 {
   "name": "format-my-sql",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Inject parameters into raw SQL and format the result — CLI tool",
   "type": "module",
   "bin": {
