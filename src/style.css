@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+#editor .CodeMirror {
+  height: auto;
+  min-height: 16rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+}
+
+#editor .CodeMirror-scroll {
+  min-height: 16rem;
+}
+
+.cm-s-material-darker {
+  border-radius: 0.5rem;
+}

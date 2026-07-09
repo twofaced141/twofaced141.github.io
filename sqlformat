@@ -1,0 +1,261 @@
+#!/usr/bin/env node
+// ─── SQL Log Formatter CLI ────────────────────────────────────────────────
+// Usage:
+//   sqlformat "SELECT * FROM t WHERE id = ?" "[42]"
+//   echo "SELECT * FROM t WHERE id = ?" | sqlformat -p "[42]"
+//   sqlformat < input.txt                          # SQL on line 1, params on line 2
+//   sqlformat -h
+
+const SQL_KEYWORDS = [
+  'SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN',
+  'OUTER JOIN', 'FULL JOIN', 'CROSS JOIN', 'ON', 'AND', 'OR', 'NOT', 'IN',
+  'EXISTS', 'BETWEEN', 'LIKE', 'IS', 'NULL', 'AS', 'DISTINCT',
+  'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'OFFSET',
+  'INSERT INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE FROM',
+  'UNION', 'ALL', 'INTERSECT', 'EXCEPT',
+  'ASC', 'DESC',
+  'COUNT', 'SUM', 'AVG', 'MIN', 'MAX',
+  'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
+  'CREATE', 'ALTER', 'DROP', 'TABLE', 'INDEX', 'VIEW',
+  'PRIMARY KEY', 'FOREIGN KEY', 'REFERENCES', 'DEFAULT', 'CHECK', 'UNIQUE', 'CONSTRAINT',
+  'INNER', 'OUTER', 'FULL', 'CROSS', 'LEFT', 'RIGHT',
+  'TRUE', 'FALSE',
+];
+
+const CLAUSE_KEYWORDS = [
+  'SELECT', 'FROM', 'WHERE',
+  'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN', 'OUTER JOIN', 'FULL JOIN', 'CROSS JOIN', 'JOIN',
+  'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'OFFSET',
+  'INSERT INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE FROM',
+  'UNION', 'INTERSECT', 'EXCEPT',
+  'AND', 'OR', 'ON',
+];
+
+const CLAUSE_SORTED = [...CLAUSE_KEYWORDS].sort((a, b) => b.length - a.length);
+const KW_SORTED = [...SQL_KEYWORDS].sort((a, b) => b.length - a.length);
+
+function escapeSQLValue(val) {
+  if (val === null || val === undefined) return 'NULL';
+  if (typeof val === 'boolean') return val ? 'TRUE' : 'FALSE';
+  if (typeof val === 'number') return String(val);
+  const str = String(val);
+  return "'" + str.replace(/'/g, "''") + "'";
+}
+
+function parseParams(input) {
+  const t = input.trim();
+  if (!t) return [];
+  if (t.startsWith('[') || t.startsWith('{')) {
+    return JSON.parse(t);
+  }
+  if (t.includes(',')) {
+    return t.split(',').map(s => {
+      const v = s.trim();
+      if (!v || v === 'null') return null;
+      if (v === 'true') return true;
+      if (v === 'false') return false;
+      if (!isNaN(Number(v)) && v.length > 0) return Number(v);
+      if ((v.startsWith("'") && v.endsWith("'")) || (v.startsWith('"') && v.endsWith('"'))) return v.slice(1, -1);
+      return v;
+    });
+  }
+  const v = t;
+  if (v === 'null') return [null];
+  if (v === 'true') return [true];
+  if (v === 'false') return [false];
+  if (!isNaN(Number(v))) return [Number(v)];
+  if ((v.startsWith("'") && v.endsWith("'")) || (v.startsWith('"') && v.endsWith('"'))) return [v.slice(1, -1)];
+  return [v];
+}
+
+function injectParams(sql, params) {
+  let result = sql;
+  const hasQ = /\?/.test(result);
+  const hasDollar = /\$\d+/.test(result);
+  const hasNamed = /:\w+/.test(result);
+
+  if (Array.isArray(params)) {
+    if (hasQ) {
+      let i = 0;
+      result = result.replace(/\?/g, () => (i < params.length ? escapeSQLValue(params[i++]) : '?'));
+    }
+    if (hasDollar) {
+      result = result.replace(/\$(\d+)/g, (_, n) => {
+        const idx = parseInt(n, 10) - 1;
+        return idx >= 0 && idx < params.length ? escapeSQLValue(params[idx]) : '$' + n;
+      });
+    }
+  } else if (typeof params === 'object' && params !== null) {
+    if (hasNamed) {
+      result = result.replace(/:(\w+)/g, (_, name) =>
+        name in params ? escapeSQLValue(params[name]) : ':' + name
+      );
+    }
+  }
+  return result;
+}
+
+function formatSQL(sql) {
+  let s = sql.replace(/\s+/g, ' ').trim();
+  if (!s) return s;
+  for (const kw of KW_SORTED) {
+    const pat = kw.replace(/\s+/g, '\\s+');
+    s = s.replace(new RegExp('\\b' + pat + '\\b', 'gi'), kw);
+  }
+  let out = '';
+  let inStr = false;
+  let quote = '';
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (!inStr && (ch === "'" || ch === '"')) {
+      inStr = true; quote = ch; out += ch; continue;
+    }
+    if (inStr && ch === quote && (i === 0 || s[i - 1] !== '\\')) {
+      inStr = false; out += ch; continue;
+    }
+    if (!inStr) {
+      let hit = false;
+      for (const kw of CLAUSE_SORTED) {
+        if (i + kw.length <= s.length && s.substring(i, i + kw.length) === kw) {
+          const prev = i > 0 ? s[i - 1] : ' ';
+          const next = i + kw.length < s.length ? s[i + kw.length] : ' ';
+          if (!/\w/.test(prev) && !/\w/.test(next)) {
+            if (i > 0 && out[out.length - 1] !== '\n') out += '\n';
+            out += kw;
+            i += kw.length - 1;
+            hit = true; break;
+          }
+        }
+      }
+      if (hit) continue;
+      out += ch;
+    } else {
+      out += ch;
+    }
+  }
+  const lines = out.split('\n').map(l => l.trim()).filter(Boolean);
+  const indented = lines.map((line, idx) => {
+    if (idx === 0) return line;
+    const fw = line.split(/\s+/)[0].toUpperCase();
+    if (fw === 'AND' || fw === 'OR') return '        ' + line;
+    if (fw === 'ON') return '        ' + line;
+    if (['FROM', 'WHERE', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'FULL', 'CROSS', 'JOIN',
+         'GROUP', 'ORDER', 'HAVING', 'LIMIT', 'OFFSET',
+         'VALUES', 'SET', 'UNION', 'INTERSECT', 'EXCEPT',
+         'INSERT', 'UPDATE', 'DELETE'].includes(fw)) {
+      return '    ' + line;
+    }
+    return '    ' + line;
+  });
+  return indented.join('\n').trim();
+}
+
+// ─── ANSI syntax highlighting ──────────────────────────────────────────────
+
+const ANSI = {
+  reset: '\x1b[0m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  blue: '\x1b[1;34m',
+  magenta: '\x1b[35m',
+};
+
+function highlightANSI(sql) {
+  let s = sql
+    .replace(/'[^']*(?:''[^']*)*'/g, ANSI.green + '$&' + ANSI.reset)
+    .replace(/"[^"]*"/g, ANSI.green + '$&' + ANSI.reset)
+    .replace(/\b(\d+(?:\.\d+)?)\b/g, ANSI.yellow + '$1' + ANSI.reset)
+    .replace(/\b(NULL|TRUE|FALSE)\b/g, ANSI.magenta + '$1' + ANSI.reset);
+  for (const kw of KW_SORTED) {
+    const pat = kw.replace(/\s+/g, '\\s+');
+    s = s.replace(new RegExp('\\b(' + pat + ')\\b', 'g'), ANSI.blue + '$1' + ANSI.reset);
+  }
+  return s;
+}
+
+// ─── CLI ───────────────────────────────────────────────────────────────────
+
+function usage() {
+  console.error(`
+Usage:
+  sqlformat [options] "SQL QUERY" "[parameters]"
+  echo "SQL QUERY" | sqlformat -p "[parameters]"
+  cat file.txt | sqlformat                     # line 1 = SQL, line 2 = params
+
+Options:
+  --no-color    Disable ANSI color output
+
+Examples:
+  sqlformat "SELECT * FROM t WHERE id = ?" "[42]"
+  sqlformat "SELECT * FROM t WHERE id = :id" '{"id":42}'
+  echo "SELECT * FROM t WHERE name = ?" | sqlformat -p '["admin"]'
+`);
+  process.exit(1);
+}
+
+function main() {
+  let color = process.stdout.isTTY && !process.env.NO_COLOR;
+  const args = process.argv.slice(2);
+  const help = args.includes('-h') || args.includes('--help');
+  if (help) usage();
+
+  const ncIdx = args.indexOf('--no-color');
+  if (ncIdx !== -1) {
+    color = false;
+    args.splice(ncIdx, 1);
+  }
+
+  const pIdx = args.indexOf('-p');
+  let sql, paramsRaw;
+
+  if (pIdx !== -1) {
+    paramsRaw = args[pIdx + 1];
+    if (!paramsRaw) usage();
+    args.splice(pIdx, 2);
+    sql = args.join(' ') || null;
+  } else if (args.length === 2) {
+    [sql, paramsRaw] = args;
+  } else if (args.length === 1) {
+    sql = args[0];
+    paramsRaw = '';
+  } else if (args.length === 0) {
+    sql = null;
+    paramsRaw = '';
+  } else {
+    usage();
+  }
+
+  if (sql && paramsRaw !== undefined) {
+    run(sql, paramsRaw, color);
+    return;
+  }
+
+  const stdin = fs.readFileSync(0, 'utf-8').trim();
+  if (!stdin) usage();
+
+  if (sql && !paramsRaw) {
+    run(sql, stdin, color);
+  } else if (!sql && paramsRaw) {
+    run(stdin, paramsRaw, color);
+  } else {
+    const lines = stdin.split('\n').filter(Boolean);
+    if (lines.length === 0) usage();
+    run(lines[0], lines.slice(1).join('\n'), color);
+  }
+}
+
+function run(sql, paramsRaw, useColor) {
+  try {
+    const params = parseParams(paramsRaw || '');
+    const injected = injectParams(sql, params);
+    let formatted = formatSQL(injected);
+    if (useColor) formatted = highlightANSI(formatted);
+    console.log(formatted);
+  } catch (e) {
+    console.error('Error:', e.message);
+    process.exit(1);
+  }
+}
+
+const fs = require('fs');
+main();
