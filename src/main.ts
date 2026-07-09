@@ -137,6 +137,30 @@ document.addEventListener('keydown', e => {
   }
 });
 
+// ─── Global helpers (used from inline onclick) ─────────────────────────────
+
+(window as any).copyText = function (btn: HTMLElement, text: string) {
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).then(() => { flashCopyBtn(btn, 'Copied!'); });
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    flashCopyBtn(btn, 'Copied!');
+  }
+};
+
+function flashCopyBtn(btn: HTMLElement, msg: string) {
+  const orig = btn.innerHTML;
+  btn.innerHTML = msg;
+  setTimeout(() => { btn.innerHTML = orig; }, 1200);
+}
+
 // ─── Init ──────────────────────────────────────────────────────────────────
 
 process();
